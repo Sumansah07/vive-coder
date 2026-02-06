@@ -1,58 +1,64 @@
 /**
- * OpenCode Web Agent Proxy
+ * Daytona AI Agent Proxy
  * 
- * Direct integration with OpenCode running in Daytona
+ * Uses real Claude Agent SDK running in Daytona sandbox
+ * with full tool access (Read, Edit, Bash, etc.)
  */
 
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
-import { callOpenCodeAgent } from '~/lib/.server/daytona/opencode';
+import { callDaytonaAgent } from '~/lib/.server/daytona/agent';
 
 export async function action({ context, request }: ActionFunctionArgs) {
   try {
-    console.log('[OpenCode API] Received request');
+    console.log('[Daytona Agent API] Received request');
     
     const body = await request.json<{
       message?: string;
       messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
     }>();
     
-    console.log('[OpenCode API] Request body:', JSON.stringify(body));
+    console.log('[Daytona Agent API] Request body:', JSON.stringify(body));
 
     const { message, messages } = body;
 
     // Convert single message to messages array if needed
     const chatMessages = messages || [{ role: 'user' as const, content: message || '' }];
     
-    console.log('[OpenCode API] Calling OpenCode agent with messages:', JSON.stringify(chatMessages));
+    console.log('[Daytona Agent API] Calling Daytona agent...');
 
-    // Call OpenCode agent
-    const response = await callOpenCodeAgent(chatMessages, context.cloudflare.env);
+    // Call Daytona AI agent
+    const response = await callDaytonaAgent(chatMessages, context.cloudflare.env);
     
-    console.log('[OpenCode API] Got response:', JSON.stringify(response));
+    console.log('[Daytona Agent API] Got response');
 
-    // Return in AI SDK format for useChat compatibility
-    return new Response(
-      JSON.stringify({
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: response.message,
-        // Include additional OpenCode data
-        files: response.files,
-        commands: response.commands,
-        sandboxUrl: response.sandboxUrl,
-      }),
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    // Return in Vercel AI SDK streaming format
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        // Escape the message for JSON string format
+        const escapedMessage = response.message
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t');
+        
+        // Send in AI SDK format: 0:"message content"
+        controller.enqueue(encoder.encode(`0:"${escapedMessage}"\n`));
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'X-Vercel-AI-Data-Stream': 'v1',
+      },
+    });
   } catch (error) {
-    console.error('[OpenCode API] Error details:', error);
-    console.error('[OpenCode API] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    console.error('[Daytona Agent API] Error:', error);
 
-    const errorMessage = error instanceof Error ? error.message : 'Failed to communicate with OpenCode Agent';
-    console.error('[OpenCode API] Returning error:', errorMessage);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to communicate with Daytona Agent';
 
     return Response.json(
       {
