@@ -24,8 +24,11 @@ export async function action({ context, request }: ActionFunctionArgs) {
       throw new Error('Missing API keys: OPENROUTER_API_KEY or E2B_API_KEY');
     }
 
-    // Create agent
-    const agent = new ClaudeCodeAgent(openrouterKey, e2bKey);
+    // Generate session ID (in production, tie to user/project)
+    const sessionId = context.cloudflare.env.SESSION_ID || 'bolt-default-session';
+
+    // Create agent with session ID
+    const agent = new ClaudeCodeAgent(openrouterKey, e2bKey, sessionId);
 
     // Stream response
     const encoder = new TextEncoder();
