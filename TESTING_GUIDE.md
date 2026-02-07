@@ -29,7 +29,7 @@ If Sandbox Agent binary is not available, you have two options:
 Check `.env.local`:
 ```bash
 # Your OpenRouter key (WORKING)
-OPENROUTER_API_KEY=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
+
 
 # Your E2B key (WORKING)
 E2B_API_KEY=e2b_2c61d0ee01f090cf3581822bfefbeb13e5511520
@@ -42,7 +42,7 @@ E2B_API_KEY=e2b_2c61d0ee01f090cf3581822bfefbeb13e5511520
 **If you have the binary:**
 ```bash
 # Set environment variables for Sandbox Agent
-export OPENROUTER_API_KEY=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
+export 
 export E2B_API_KEY=e2b_2c61d0ee01f090cf3581822bfefbeb13e5511520
 
 # Start Sandbox Agent
@@ -212,7 +212,7 @@ The original agent is already powerful and production-ready.
 ### Check your balance:
 ```bash
 curl https://openrouter.ai/api/v1/auth/key \
-  -H "Authorization: Bearer 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"
+  -H "Authorization: 
 ```
 
 ## Success Checklist
