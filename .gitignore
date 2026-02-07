@@ -29,3 +29,4 @@ dist-ssr
 .wrangler
 _worker.bundle
 .daytona-sandbox-id
+sandbox-agent

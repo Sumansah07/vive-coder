@@ -23,4 +23,3 @@ export async function action({ context, request }: ActionFunctionArgs) {
     );
   }
 }
-

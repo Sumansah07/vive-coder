@@ -79,7 +79,7 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
   const [animationScope, animate] = useAnimate();
 
   const { messages, isLoading, input, handleInputChange, setInput, stop, append } = useChat({
-    api: '/api/opencode',
+    api: '/api/e2b',  // E2B + Claude Code with real-time streaming
     initialMessages,
     onError: (error) => {
       logger.error('OpenCode request failed\n\n', error);

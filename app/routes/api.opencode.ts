@@ -1,51 +1,122 @@
 /**
- * Daytona AI Agent Proxy
+ * OpenCode API - Sandbox Agent Integration
  * 
- * Uses real Claude Agent SDK running in Daytona sandbox
- * with full tool access (Read, Edit, Bash, etc.)
+ * Uses the proper Sandbox Agent client
  */
 
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
-import { callDaytonaAgent } from '~/lib/.server/daytona/agent';
+import { getSandboxAgentClient } from '~/lib/.server/sandbox-agent/sandboxAgentClient';
 
 export async function action({ context, request }: ActionFunctionArgs) {
   try {
-    console.log('[Daytona Agent API] Received request');
+    console.log('[Sandbox Agent API] Received request');
     
     const body = await request.json<{
       message?: string;
       messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
     }>();
     
-    console.log('[Daytona Agent API] Request body:', JSON.stringify(body));
+    console.log('[Sandbox Agent API] Request body:', JSON.stringify(body));
 
     const { message, messages } = body;
-
-    // Convert single message to messages array if needed
     const chatMessages = messages || [{ role: 'user' as const, content: message || '' }];
     
-    console.log('[Daytona Agent API] Calling Daytona agent...');
-
-    // Call Daytona AI agent
-    const response = await callDaytonaAgent(chatMessages, context.cloudflare.env);
+    const client = getSandboxAgentClient();
+    // Use timestamp to create unique sessions (avoids stale session issues)
+    const sessionId = `bolt-session-${Date.now()}`;
     
-    console.log('[Daytona Agent API] Got response');
-
-    // Return in Vercel AI SDK streaming format
+    // Ensure session exists with OpenCode agent
+    // OpenCode will use E2B sandboxes for code execution
+    await client.ensureSession(sessionId, 'opencode', 'build');
+    
+    // Get last message
+    const lastMessage = chatMessages[chatMessages.length - 1];
+    if (!lastMessage || lastMessage.role !== 'user') {
+      throw new Error('No user message found');
+    }
+    
+    console.log('[Sandbox Agent] Sending message:', lastMessage.content.substring(0, 100));
+    
+    // Post message
+    await client.postMessage(sessionId, { message: lastMessage.content });
+    
+    // Stream events
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
-      start(controller) {
-        // Escape the message for JSON string format
-        const escapedMessage = response.message
-          .replace(/\\/g, '\\\\')
-          .replace(/"/g, '\\"')
-          .replace(/\n/g, '\\n')
-          .replace(/\r/g, '\\r')
-          .replace(/\t/g, '\\t');
-        
-        // Send in AI SDK format: 0:"message content"
-        controller.enqueue(encoder.encode(`0:"${escapedMessage}"\n`));
-        controller.close();
+      async start(controller) {
+        try {
+          for await (const event of client.streamEvents(sessionId)) {
+            console.log('[Sandbox Agent] Event:', event.type, event.data ? JSON.stringify(event.data).substring(0, 200) : '');
+            
+            // Handle different event types
+            switch (event.type) {
+              case 'item.delta':
+                // Delta events contain incremental text updates
+                if (event.data?.delta) {
+                  const escaped = event.data.delta
+                    .replace(/\\/g, '\\\\')
+                    .replace(/"/g, '\\"')
+                    .replace(/\n/g, '\\n')
+                    .replace(/\r/g, '\\r')
+                    .replace(/\t/g, '\\t');
+                  
+                  controller.enqueue(encoder.encode(`0:"${escaped}"\n`));
+                }
+                break;
+                
+              case 'text':
+              case 'message':
+              case 'artifact.output':
+                // Text content from agent
+                if (event.data?.content) {
+                  const escaped = event.data.content
+                    .replace(/\\/g, '\\\\')
+                    .replace(/"/g, '\\"')
+                    .replace(/\n/g, '\\n')
+                    .replace(/\r/g, '\\r')
+                    .replace(/\t/g, '\\t');
+                  
+                  controller.enqueue(encoder.encode(`0:"${escaped}"\n`));
+                }
+                break;
+                
+              case 'tool.call':
+                // Tool execution (file operations, etc.)
+                console.log('[Sandbox Agent] Tool call:', event.data?.tool);
+                break;
+                
+              case 'item.completed':
+                // Check if this is the turn completion status
+                if (event.data?.item?.kind === 'status' && 
+                    event.data?.item?.content?.[0]?.label === 'turn.completed') {
+                  console.log('[Sandbox Agent] Turn completed');
+                  controller.close();
+                  return;
+                }
+                break;
+                
+              case 'turn.completed':
+              case 'done':
+                // Agent finished
+                console.log('[Sandbox Agent] Turn completed');
+                controller.close();
+                return;
+                
+              case 'error':
+                // Error occurred
+                console.error('[Sandbox Agent] Error:', event.data);
+                controller.close();
+                return;
+            }
+          }
+          
+          // Stream ended without explicit completion
+          console.log('[Sandbox Agent] Stream ended');
+          controller.close();
+        } catch (error) {
+          console.error('[Sandbox Agent] Stream error:', error);
+          controller.error(error);
+        }
       },
     });
 
@@ -56,13 +127,11 @@ export async function action({ context, request }: ActionFunctionArgs) {
       },
     });
   } catch (error) {
-    console.error('[Daytona Agent API] Error:', error);
-
-    const errorMessage = error instanceof Error ? error.message : 'Failed to communicate with Daytona Agent';
+    console.error('[Sandbox Agent API] Error:', error);
 
     return Response.json(
       {
-        error: errorMessage,
+        error: error instanceof Error ? error.message : 'Failed to communicate with Sandbox Agent',
         details: error instanceof Error ? error.stack : String(error),
       },
       { status: 500 },
